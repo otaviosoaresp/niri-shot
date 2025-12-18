@@ -1,7 +1,8 @@
-use super::shapes::{Shape, ShapeType, Color};
+use super::shapes::{Color, Shape, ShapeType};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ToolType {
+    #[default]
     Select,
     Rectangle,
     Circle,
@@ -11,12 +12,6 @@ pub enum ToolType {
     Text,
     Blur,
     Highlight,
-}
-
-impl Default for ToolType {
-    fn default() -> Self {
-        Self::Select
-    }
 }
 
 pub struct Tool {
@@ -40,7 +35,13 @@ impl Default for Tool {
 }
 
 impl Tool {
-    pub fn create_shape(&self, start_x: f64, start_y: f64, end_x: f64, end_y: f64) -> Option<Shape> {
+    pub fn create_shape(
+        &self,
+        start_x: f64,
+        start_y: f64,
+        end_x: f64,
+        end_y: f64,
+    ) -> Option<Shape> {
         let shape_type = match self.tool_type {
             ToolType::Rectangle => ShapeType::Rectangle,
             ToolType::Circle => ShapeType::Ellipse,

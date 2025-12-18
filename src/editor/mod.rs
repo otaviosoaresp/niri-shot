@@ -1,7 +1,7 @@
 mod canvas;
-mod tools;
 mod shapes;
+mod tools;
 
 pub use canvas::EditorCanvas;
-pub use tools::ToolType;
 pub use shapes::Color;
+pub use tools::ToolType;

@@ -56,4 +56,26 @@ impl Config {
         directories::ProjectDirs::from("com", "github", "niri-shot")
             .map(|dirs| dirs.config_dir().join("config.json"))
     }
+
+    fn cache_dir() -> Option<PathBuf> {
+        directories::ProjectDirs::from("com", "github", "niri-shot")
+            .map(|dirs| dirs.cache_dir().to_path_buf())
+    }
+
+    pub fn save_last_region(geometry: &str) -> anyhow::Result<()> {
+        if let Some(cache_dir) = Self::cache_dir() {
+            fs::create_dir_all(&cache_dir)?;
+            let path = cache_dir.join("last-region");
+            fs::write(path, geometry)?;
+        }
+        Ok(())
+    }
+
+    pub fn load_last_region() -> Option<String> {
+        Self::cache_dir()
+            .map(|dir| dir.join("last-region"))
+            .and_then(|path| fs::read_to_string(path).ok())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    }
 }

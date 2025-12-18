@@ -280,7 +280,12 @@ impl Shape {
             ShapeType::Text => {
                 let text_width = self.text.len() as f64 * self.font_size * 0.6;
                 let text_height = self.font_size;
-                (self.start_x, self.start_y, self.start_x + text_width, self.start_y + text_height)
+                (
+                    self.start_x,
+                    self.start_y,
+                    self.start_x + text_width,
+                    self.start_y + text_height,
+                )
             }
             ShapeType::Line | ShapeType::Arrow => {
                 let min_x = self.start_x.min(self.end_x);
@@ -310,8 +315,10 @@ impl Shape {
         match self.shape_type {
             ShapeType::Rectangle | ShapeType::Blur | ShapeType::Highlight => {
                 let (min_x, min_y, max_x, max_y) = self.bounds();
-                x >= min_x - tolerance && x <= max_x + tolerance &&
-                y >= min_y - tolerance && y <= max_y + tolerance
+                x >= min_x - tolerance
+                    && x <= max_x + tolerance
+                    && y >= min_y - tolerance
+                    && y <= max_y + tolerance
             }
             ShapeType::Ellipse => {
                 let cx = (self.start_x + self.end_x) / 2.0;
@@ -327,9 +334,12 @@ impl Shape {
             }
             ShapeType::Line | ShapeType::Arrow => {
                 let dist = Self::point_to_line_distance(
-                    x, y,
-                    self.start_x, self.start_y,
-                    self.end_x, self.end_y
+                    x,
+                    y,
+                    self.start_x,
+                    self.start_y,
+                    self.end_x,
+                    self.end_y,
                 );
                 dist <= tolerance
             }
@@ -481,7 +491,7 @@ impl Shape {
             _ => return,
         };
 
-        let scale = (new_height / old_height).max(0.5).min(5.0);
+        let scale = (new_height / old_height).clamp(0.5, 5.0);
         self.font_size = (self.font_size * scale).clamp(8.0, 100.0);
 
         match corner {
