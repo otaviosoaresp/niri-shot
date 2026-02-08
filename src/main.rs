@@ -17,7 +17,7 @@ struct Args {
     #[arg(short, long, help = "Capture fullscreen")]
     fullscreen: bool,
 
-    #[arg(short, long, help = "Capture region selection")]
+    #[arg(short, long, help = "Capture region")]
     region: bool,
 
     #[arg(short, long, help = "Capture window")]

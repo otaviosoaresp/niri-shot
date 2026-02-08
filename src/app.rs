@@ -283,6 +283,9 @@ impl NiriShotApp {
 
                 window.set_visible(false);
 
+                while glib::MainContext::default().iteration(false) {}
+                std::thread::sleep(std::time::Duration::from_millis(150));
+
                 let result = CaptureBackend::capture(mode);
 
                 window.set_visible(true);

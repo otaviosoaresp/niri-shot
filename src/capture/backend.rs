@@ -1,7 +1,7 @@
 use crate::config::Config;
 use anyhow::{anyhow, Result};
-use std::io::{self, IsTerminal, Write};
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 #[derive(Debug, Clone, Copy)]
 pub enum CaptureMode {
@@ -35,25 +35,33 @@ impl CaptureBackend {
     }
 
     fn capture_region() -> Result<Vec<u8>> {
-        if io::stdin().is_terminal() {
-            if let Some(last) = Config::load_last_region() {
-                print!("Previous region: {}. Enter to use, any key for new: ", last);
-                io::stdout().flush().ok();
+        let last_region = Config::load_last_region();
 
-                let mut input = String::new();
-                if io::stdin().read_line(&mut input).is_ok() && input.trim().is_empty() {
-                    return Self::capture_geometry(&last);
-                }
+        let mut slurp_cmd = Command::new("slurp");
+        slurp_cmd.stdout(Stdio::piped());
+
+        if last_region.is_some() {
+            slurp_cmd
+                .stdin(Stdio::piped())
+                .arg("-B")
+                .arg("#3daee966");
+        }
+
+        let mut child = slurp_cmd.spawn()?;
+
+        if let Some(ref geometry) = last_region {
+            if let Some(mut stdin) = child.stdin.take() {
+                let _ = writeln!(stdin, "{}", geometry);
             }
         }
 
-        let slurp = Command::new("slurp").output()?;
+        let output = child.wait_with_output()?;
 
-        if !slurp.status.success() {
+        if !output.status.success() {
             return Err(anyhow!("Selection cancelled"));
         }
 
-        let geometry = String::from_utf8_lossy(&slurp.stdout).trim().to_string();
+        let geometry = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
         if geometry.is_empty() {
             return Err(anyhow!("No region selected"));
