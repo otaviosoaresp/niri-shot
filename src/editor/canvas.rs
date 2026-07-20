@@ -6,6 +6,7 @@ use gtk4::{glib, DrawingArea, EventControllerMotion, GestureClick, GestureDrag};
 use std::cell::{Cell, RefCell};
 use std::f64::consts::PI;
 
+use super::history::{History, UndoEntry};
 use super::shapes::{Shape, ShapeType};
 use super::tools::{Tool, ToolType};
 
@@ -26,7 +27,8 @@ mod imp {
     pub struct EditorCanvas {
         pub image: RefCell<Option<Pixbuf>>,
         pub shapes: RefCell<Vec<Shape>>,
-        pub redo_stack: RefCell<Vec<Shape>>,
+        pub history: RefCell<History>,
+        pub pending_modify: RefCell<Option<(usize, Shape)>>,
         pub current_shape: RefCell<Option<Shape>>,
         pub tool: RefCell<Tool>,
         pub drawing: Cell<bool>,
@@ -52,7 +54,8 @@ mod imp {
             Self {
                 image: RefCell::new(None),
                 shapes: RefCell::new(Vec::new()),
-                redo_stack: RefCell::new(Vec::new()),
+                history: RefCell::new(History::default()),
+                pending_modify: RefCell::new(None),
                 current_shape: RefCell::new(None),
                 tool: RefCell::new(Tool::default()),
                 drawing: Cell::new(false),
@@ -168,7 +171,14 @@ impl EditorCanvas {
 
         let key = gtk4::EventControllerKey::new();
         let canvas = self.clone();
-        key.connect_key_pressed(move |_, keyval, _, _| canvas.on_key_pressed(keyval));
+        key.connect_key_pressed(move |_, keyval, _, state| {
+            if state.intersects(
+                gtk4::gdk::ModifierType::CONTROL_MASK | gtk4::gdk::ModifierType::ALT_MASK,
+            ) {
+                return glib::Propagation::Proceed;
+            }
+            canvas.on_key_pressed(keyval)
+        });
 
         self.add_controller(key);
 
@@ -305,12 +315,13 @@ impl EditorCanvas {
                     imp.drag_start_x.set(x);
                     imp.drag_start_y.set(y);
 
-                    if handle == HandleType::Rotation {
-                        if let Some(idx) = imp.selected_index.get() {
-                            let shapes = imp.shapes.borrow();
-                            if let Some(shape) = shapes.get(idx) {
+                    if let Some(idx) = imp.selected_index.get() {
+                        let shapes = imp.shapes.borrow();
+                        if let Some(shape) = shapes.get(idx) {
+                            if handle == HandleType::Rotation {
                                 imp.initial_rotation.set(shape.rotation);
                             }
+                            *imp.pending_modify.borrow_mut() = Some((idx, shape.clone()));
                         }
                     }
                 } else if let Some(idx) = self.hit_test(x, y) {
@@ -319,9 +330,15 @@ impl EditorCanvas {
                     imp.dragging.set(true);
                     imp.drag_start_x.set(x);
                     imp.drag_start_y.set(y);
+
+                    let shapes = imp.shapes.borrow();
+                    if let Some(shape) = shapes.get(idx) {
+                        *imp.pending_modify.borrow_mut() = Some((idx, shape.clone()));
+                    }
                 } else {
                     imp.selected_index.set(None);
                     imp.active_handle.set(HandleType::None);
+                    *imp.pending_modify.borrow_mut() = None;
                 }
                 self.queue_draw();
             }
@@ -333,7 +350,6 @@ impl EditorCanvas {
             }
             ToolType::FreeHand => {
                 imp.drawing.set(true);
-                imp.redo_stack.borrow_mut().clear();
                 let tool = imp.tool.borrow();
                 let shape = Shape {
                     shape_type: ShapeType::FreeHand,
@@ -351,7 +367,6 @@ impl EditorCanvas {
             }
             _ => {
                 imp.drawing.set(true);
-                imp.redo_stack.borrow_mut().clear();
                 let tool = imp.tool.borrow();
                 if let Some(shape) = tool.create_shape(x, y, x, y) {
                     *imp.current_shape.borrow_mut() = Some(shape);
@@ -390,12 +405,16 @@ impl EditorCanvas {
         if tool_type == ToolType::Select {
             if let Some(idx) = imp.selected_index.get() {
                 let shapes = imp.shapes.borrow();
-                if idx < shapes.len() {
+                if let Some(shape) = shapes.get(idx) {
                     imp.dragging.set(true);
                     imp.drag_start_x.set(x);
                     imp.drag_start_y.set(y);
                     imp.drag_offset_x.set(0.0);
                     imp.drag_offset_y.set(0.0);
+
+                    if imp.pending_modify.borrow().is_none() {
+                        *imp.pending_modify.borrow_mut() = Some((idx, shape.clone()));
+                    }
                 }
             }
         }
@@ -472,6 +491,15 @@ impl EditorCanvas {
                 }
             }
 
+            if let Some((idx, before)) = imp.pending_modify.borrow_mut().take() {
+                let after = imp.shapes.borrow().get(idx).cloned();
+                if let Some(after) = after {
+                    if after != before {
+                        self.push_undo(UndoEntry::Modify { idx, before, after });
+                    }
+                }
+            }
+
             imp.dragging.set(false);
             imp.active_handle.set(HandleType::None);
             imp.drag_offset_x.set(0.0);
@@ -493,7 +521,12 @@ impl EditorCanvas {
         if let Some(mut shape) = imp.current_shape.borrow_mut().take() {
             shape.end_x = x;
             shape.end_y = y;
-            imp.shapes.borrow_mut().push(shape);
+            let idx = {
+                let mut shapes = imp.shapes.borrow_mut();
+                shapes.push(shape.clone());
+                shapes.len() - 1
+            };
+            self.push_undo(UndoEntry::Add { idx, shape });
         }
 
         self.queue_draw();
@@ -568,10 +601,13 @@ impl EditorCanvas {
         if let Some((x, y)) = imp.text_input_pos.borrow_mut().take() {
             let text = imp.text_input_buffer.borrow().clone();
             if !text.is_empty() {
-                let tool = imp.tool.borrow();
-                let shape = tool.create_text_shape(x, y, text);
-                imp.redo_stack.borrow_mut().clear();
-                imp.shapes.borrow_mut().push(shape);
+                let shape = imp.tool.borrow().create_text_shape(x, y, text);
+                let idx = {
+                    let mut shapes = imp.shapes.borrow_mut();
+                    shapes.push(shape.clone());
+                    shapes.len() - 1
+                };
+                self.push_undo(UndoEntry::Add { idx, shape });
             }
         }
 
@@ -747,7 +783,8 @@ impl EditorCanvas {
             self.set_content_height(pixbuf.height());
             *self.imp().image.borrow_mut() = Some(pixbuf);
             self.imp().shapes.borrow_mut().clear();
-            self.imp().redo_stack.borrow_mut().clear();
+            self.imp().history.borrow_mut().clear();
+            *self.imp().pending_modify.borrow_mut() = None;
             self.imp().selected_index.set(None);
             self.queue_draw();
         }
@@ -778,41 +815,56 @@ impl EditorCanvas {
         self.imp().tool.borrow_mut().filled = filled;
     }
 
+    fn push_undo(&self, entry: UndoEntry) {
+        self.imp().history.borrow_mut().push(entry);
+    }
+
     pub fn clear_shapes(&self) {
         let imp = self.imp();
-        let shapes = imp.shapes.borrow().clone();
-        if !shapes.is_empty() {
-            imp.redo_stack.borrow_mut().extend(shapes);
-            imp.shapes.borrow_mut().clear();
+        let shapes = std::mem::take(&mut *imp.shapes.borrow_mut());
+        let mut history = imp.history.borrow_mut();
+        for (idx, shape) in shapes.into_iter().enumerate().rev() {
+            history.push(UndoEntry::Remove { idx, shape });
         }
+        drop(history);
         imp.selected_index.set(None);
         self.queue_draw();
     }
 
     pub fn undo(&self) {
         let imp = self.imp();
-        if let Some(shape) = imp.shapes.borrow_mut().pop() {
-            imp.redo_stack.borrow_mut().push(shape);
-        }
+        imp.history
+            .borrow_mut()
+            .undo(&mut imp.shapes.borrow_mut());
+        *imp.pending_modify.borrow_mut() = None;
         imp.selected_index.set(None);
         self.queue_draw();
     }
 
     pub fn redo(&self) {
         let imp = self.imp();
-        if let Some(shape) = imp.redo_stack.borrow_mut().pop() {
-            imp.shapes.borrow_mut().push(shape);
-        }
+        imp.history
+            .borrow_mut()
+            .redo(&mut imp.shapes.borrow_mut());
+        *imp.pending_modify.borrow_mut() = None;
+        imp.selected_index.set(None);
         self.queue_draw();
     }
 
     pub fn delete_selected(&self) {
         let imp = self.imp();
         if let Some(idx) = imp.selected_index.get() {
-            let mut shapes = imp.shapes.borrow_mut();
-            if idx < shapes.len() {
-                let removed = shapes.remove(idx);
-                imp.redo_stack.borrow_mut().push(removed);
+            let removed = {
+                let mut shapes = imp.shapes.borrow_mut();
+                if idx < shapes.len() {
+                    Some(shapes.remove(idx))
+                } else {
+                    None
+                }
+            };
+
+            if let Some(shape) = removed {
+                self.push_undo(UndoEntry::Remove { idx, shape });
                 imp.selected_index.set(None);
             }
         }

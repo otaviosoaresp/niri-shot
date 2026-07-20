@@ -3,7 +3,7 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
     Application, ApplicationWindow, Box, Button, ColorButton, CssProvider, EventControllerKey,
-    Orientation, Overlay, Scale, ScrolledWindow, Separator, ToggleButton,
+    Label, Orientation, Overlay, Scale, ScrolledWindow, Separator, ToggleButton,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -72,6 +72,14 @@ impl NiriShotApp {
             .capture-bar button {
                 padding: 6px 12px;
             }
+
+            .status-error {
+                color: #ff6b6b;
+            }
+
+            .status-ok {
+                color: #8bc34a;
+            }
             "#,
         );
 
@@ -121,10 +129,12 @@ impl NiriShotApp {
         main_box.append(&Separator::new(Orientation::Horizontal));
         main_box.append(&overlay);
 
-        Self::connect_capture_buttons(&capture_bar, &canvas, &window, &floating_toolbar);
+        let status = Self::status_label(&capture_bar).expect("capture bar has a status label");
+
+        Self::connect_capture_buttons(&capture_bar, &canvas, &window, &floating_toolbar, &status);
         Self::connect_tool_buttons(&floating_toolbar, &canvas);
-        Self::connect_action_buttons(&floating_toolbar, &canvas);
-        Self::setup_keyboard_shortcuts(&window, &canvas);
+        Self::connect_action_buttons(&floating_toolbar, &canvas, &status);
+        Self::setup_keyboard_shortcuts(&window, &canvas, &status);
 
         window.set_child(Some(&main_box));
 
@@ -157,11 +167,32 @@ impl NiriShotApp {
         btn_window.set_widget_name("btn_window");
         btn_window.set_tooltip_text(Some("Window"));
 
+        let status = Label::new(None);
+        status.set_widget_name("status_label");
+        status.set_hexpand(true);
+        status.set_halign(gtk4::Align::End);
+        status.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+
         bar.append(&btn_fullscreen);
         bar.append(&btn_region);
         bar.append(&btn_window);
+        bar.append(&status);
 
         bar
+    }
+
+    fn status_label(capture_bar: &Box) -> Option<Label> {
+        Self::get_children(capture_bar)
+            .into_iter()
+            .filter_map(|w| w.downcast::<Label>().ok())
+            .find(|l| l.widget_name() == "status_label")
+    }
+
+    fn show_status(label: &Label, message: &str, is_error: bool) {
+        label.set_text(message);
+        label.remove_css_class("status-error");
+        label.remove_css_class("status-ok");
+        label.add_css_class(if is_error { "status-error" } else { "status-ok" });
     }
 
     fn create_floating_toolbar() -> Box {
@@ -262,6 +293,7 @@ impl NiriShotApp {
         canvas: &EditorCanvas,
         window: &ApplicationWindow,
         toolbar: &Box,
+        status: &Label,
     ) {
         let buttons: Vec<_> = Self::get_children(capture_bar)
             .into_iter()
@@ -272,6 +304,7 @@ impl NiriShotApp {
             let canvas = canvas.clone();
             let window = window.clone();
             let toolbar = toolbar.clone();
+            let status = status.clone();
 
             btn.connect_clicked(move |button| {
                 let mode = match button.widget_name().as_str() {
@@ -295,8 +328,12 @@ impl NiriShotApp {
                         canvas.set_image(&data);
                         Self::enable_action_buttons(&toolbar, true);
                         Self::resize_window_to_image(&window, &canvas);
+                        Self::show_status(&status, "", false);
                     }
-                    Err(e) => eprintln!("Capture error: {}", e),
+                    Err(e) => {
+                        eprintln!("Capture error: {}", e);
+                        Self::show_status(&status, &format!("Capture failed: {}", e), true);
+                    }
                 }
             });
         }
@@ -388,7 +425,7 @@ impl NiriShotApp {
         }
     }
 
-    fn connect_action_buttons(toolbar: &Box, canvas: &EditorCanvas) {
+    fn connect_action_buttons(toolbar: &Box, canvas: &EditorCanvas, status: &Label) {
         let buttons: Vec<_> = Self::get_children(toolbar)
             .into_iter()
             .filter_map(|w| w.downcast::<Button>().ok())
@@ -396,27 +433,59 @@ impl NiriShotApp {
 
         for btn in buttons {
             let canvas = canvas.clone();
+            let status = status.clone();
 
             btn.connect_clicked(move |button| {
-                if let Some(data) = canvas.get_image_data() {
-                    let result = match button.widget_name().as_str() {
-                        "btn_save" => Self::save_screenshot(&data),
-                        "btn_copy" => Self::copy_to_clipboard(&data),
-                        _ => Ok(()),
-                    };
+                let action = button.widget_name();
+                let action = action.as_str();
+                if action != "btn_save" && action != "btn_copy" {
+                    return;
+                }
 
-                    if let Err(e) = result {
-                        eprintln!("Error: {}", e);
-                    }
+                let Some(data) = canvas.get_image_data() else {
+                    Self::show_status(&status, "Nothing to export", true);
+                    return;
+                };
+
+                match action {
+                    "btn_save" => Self::report_save(&status, Self::save_screenshot(&data)),
+                    _ => Self::report_copy(&status, Self::copy_to_clipboard(&data)),
                 }
             });
         }
     }
 
-    fn setup_keyboard_shortcuts(window: &ApplicationWindow, canvas: &EditorCanvas) {
+    fn report_save(status: &Label, result: anyhow::Result<std::path::PathBuf>) {
+        match result {
+            Ok(path) => {
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| path.display().to_string());
+                Self::show_status(status, &format!("Saved {}", name), false);
+            }
+            Err(e) => {
+                eprintln!("Save error: {}", e);
+                Self::show_status(status, &format!("Save failed: {}", e), true);
+            }
+        }
+    }
+
+    fn report_copy(status: &Label, result: anyhow::Result<()>) {
+        match result {
+            Ok(()) => Self::show_status(status, "Copied to clipboard", false),
+            Err(e) => {
+                eprintln!("Copy error: {}", e);
+                Self::show_status(status, &format!("Copy failed: {}", e), true);
+            }
+        }
+    }
+
+    fn setup_keyboard_shortcuts(window: &ApplicationWindow, canvas: &EditorCanvas, status: &Label) {
         let key_controller = EventControllerKey::new();
 
         let canvas = canvas.clone();
+        let status = status.clone();
 
         key_controller.connect_key_pressed(move |_, key, _, modifier| {
             let ctrl = modifier.contains(gtk4::gdk::ModifierType::CONTROL_MASK);
@@ -432,18 +501,16 @@ impl NiriShotApp {
                         return glib::Propagation::Stop;
                     }
                     gtk4::gdk::Key::s => {
-                        if let Some(data) = canvas.get_image_data() {
-                            if let Err(e) = Self::save_screenshot(&data) {
-                                eprintln!("Save error: {}", e);
-                            }
+                        match canvas.get_image_data() {
+                            Some(data) => Self::report_save(&status, Self::save_screenshot(&data)),
+                            None => Self::show_status(&status, "Nothing to export", true),
                         }
                         return glib::Propagation::Stop;
                     }
                     gtk4::gdk::Key::c => {
-                        if let Some(data) = canvas.get_image_data() {
-                            if let Err(e) = Self::copy_to_clipboard(&data) {
-                                eprintln!("Copy error: {}", e);
-                            }
+                        match canvas.get_image_data() {
+                            Some(data) => Self::report_copy(&status, Self::copy_to_clipboard(&data)),
+                            None => Self::show_status(&status, "Nothing to export", true),
                         }
                         return glib::Propagation::Stop;
                     }
@@ -492,7 +559,7 @@ impl NiriShotApp {
         children
     }
 
-    fn save_screenshot(data: &[u8]) -> anyhow::Result<()> {
+    fn save_screenshot(data: &[u8]) -> anyhow::Result<std::path::PathBuf> {
         use chrono::Local;
         use std::fs;
         use std::path::PathBuf;
@@ -513,7 +580,7 @@ impl NiriShotApp {
         fs::write(&filepath, data)?;
         println!("Saved to: {}", filepath.display());
 
-        Ok(())
+        Ok(filepath)
     }
 
     fn copy_to_clipboard(data: &[u8]) -> anyhow::Result<()> {

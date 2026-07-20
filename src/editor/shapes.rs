@@ -1,6 +1,6 @@
 use std::f64::consts::PI;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Color {
     pub r: f64,
     pub g: f64,
@@ -56,7 +56,7 @@ pub enum ShapeType {
     Highlight,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Shape {
     pub shape_type: ShapeType,
     pub start_x: f64,
@@ -231,7 +231,7 @@ impl Shape {
                 let by = y + row as f64 * block_size;
 
                 let gray = if (row + col) % 2 == 0 { 0.3 } else { 0.5 };
-                ctx.set_source_rgba(gray, gray, gray, 0.8);
+                ctx.set_source_rgba(gray, gray, gray, 1.0);
 
                 let bw = block_size.min(x + width - bx);
                 let bh = block_size.min(y + height - by);
@@ -503,6 +503,72 @@ impl Shape {
                 self.start_x = new_x;
             }
             _ => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Render a shape over an opaque background and return the ARGB32 pixels.
+    fn render_over(shape: &Shape, background: f64, size: i32) -> Vec<u8> {
+        let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, size, size).unwrap();
+        {
+            let ctx = cairo::Context::new(&surface).unwrap();
+            ctx.set_source_rgb(background, background, background);
+            ctx.paint().unwrap();
+            shape.draw(&ctx);
+        }
+        surface.take_data().unwrap().to_vec()
+    }
+
+    fn blur_covering(size: f64) -> Shape {
+        Shape {
+            shape_type: ShapeType::Blur,
+            start_x: 0.0,
+            start_y: 0.0,
+            end_x: size,
+            end_y: size,
+            ..Default::default()
+        }
+    }
+
+    /// The blur tool is a redaction feature, so its output must carry no
+    /// information about what it covered. Rendering the same blur over opposite
+    /// backgrounds must produce byte-identical pixels; any difference is content
+    /// leaking through, and a levels stretch can recover it.
+    #[test]
+    fn blur_output_is_independent_of_the_content_underneath() {
+        let size = 40;
+        let shape = blur_covering(size as f64);
+
+        let over_white = render_over(&shape, 1.0, size);
+        let over_black = render_over(&shape, 0.0, size);
+
+        assert_eq!(
+            over_white, over_black,
+            "blur output differs by background, so the covered content is still encoded"
+        );
+    }
+
+    #[test]
+    fn blur_pixels_are_exactly_the_checkerboard_greys() {
+        let size = 40;
+        let pixels = render_over(&blur_covering(size as f64), 1.0, size);
+
+        // 0.3 and 0.5 in premultiplied ARGB32 over full alpha, allowing rounding.
+        let expected = [(0.3_f64 * 255.0) as u8, (0.5_f64 * 255.0) as u8];
+
+        for (i, px) in pixels.chunks_exact(4).enumerate() {
+            let matches = expected.iter().any(|e| px[0].abs_diff(*e) <= 1);
+            assert!(
+                matches,
+                "pixel {} is {:?}, which is neither checkerboard grey — the fill is blending \
+                 with the content underneath",
+                i,
+                &px[..3]
+            );
         }
     }
 }

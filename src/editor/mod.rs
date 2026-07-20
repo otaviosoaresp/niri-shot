@@ -1,4 +1,5 @@
 mod canvas;
+mod history;
 mod shapes;
 mod tools;
 
