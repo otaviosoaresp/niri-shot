@@ -6,10 +6,12 @@ pub enum UndoEntry {
         idx: usize,
         shape: Shape,
     },
+    /// Holds whichever version of the shape is *not* currently in the document.
+    /// Applying the entry swaps it with the live one, so the same entry serves
+    /// both directions and only one copy is ever stored.
     Modify {
         idx: usize,
-        before: Shape,
-        after: Shape,
+        shape: Shape,
     },
     Remove {
         idx: usize,
@@ -41,23 +43,24 @@ impl History {
             return false;
         };
 
-        match &entry {
-            UndoEntry::Add { idx, .. } => {
-                if *idx < shapes.len() {
-                    shapes.remove(*idx);
+        let inverse = match entry {
+            UndoEntry::Add { idx, shape } => {
+                if idx < shapes.len() {
+                    shapes.remove(idx);
                 }
+                UndoEntry::Add { idx, shape }
             }
-            UndoEntry::Modify { idx, before, .. } => {
-                if let Some(shape) = shapes.get_mut(*idx) {
-                    *shape = before.clone();
-                }
-            }
+            UndoEntry::Modify { idx, shape } => UndoEntry::Modify {
+                idx,
+                shape: Self::swap(shapes, idx, shape),
+            },
             UndoEntry::Remove { idx, shape } => {
-                shapes.insert((*idx).min(shapes.len()), shape.clone());
+                shapes.insert(idx.min(shapes.len()), shape.clone());
+                UndoEntry::Remove { idx, shape }
             }
-        }
+        };
 
-        self.redo_stack.push(entry);
+        self.redo_stack.push(inverse);
         true
     }
 
@@ -66,41 +69,48 @@ impl History {
             return false;
         };
 
-        match &entry {
+        let inverse = match entry {
             UndoEntry::Add { idx, shape } => {
-                shapes.insert((*idx).min(shapes.len()), shape.clone());
+                shapes.insert(idx.min(shapes.len()), shape.clone());
+                UndoEntry::Add { idx, shape }
             }
-            UndoEntry::Modify { idx, after, .. } => {
-                if let Some(shape) = shapes.get_mut(*idx) {
-                    *shape = after.clone();
+            UndoEntry::Modify { idx, shape } => UndoEntry::Modify {
+                idx,
+                shape: Self::swap(shapes, idx, shape),
+            },
+            UndoEntry::Remove { idx, shape } => {
+                if idx < shapes.len() {
+                    shapes.remove(idx);
                 }
+                UndoEntry::Remove { idx, shape }
             }
-            UndoEntry::Remove { idx, .. } => {
-                if *idx < shapes.len() {
-                    shapes.remove(*idx);
-                }
-            }
-        }
+        };
 
-        self.undo_stack.push(entry);
+        self.undo_stack.push(inverse);
         true
+    }
+
+    /// Put `shape` at `idx` and hand back whatever was there, so the caller can
+    /// store it for the opposite direction. A missing index leaves both alone.
+    fn swap(shapes: &mut [Shape], idx: usize, shape: Shape) -> Shape {
+        match shapes.get_mut(idx) {
+            Some(slot) => std::mem::replace(slot, shape),
+            None => shape,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::editor::shapes::{Color, ShapeType};
+    use crate::editor::shapes::ShapeType;
 
     fn shape_at(x: f64) -> Shape {
         Shape {
             shape_type: ShapeType::Rectangle,
             start_x: x,
-            start_y: 0.0,
             end_x: x + 10.0,
             end_y: 10.0,
-            color: Color::new(1.0, 0.0, 0.0, 1.0),
-            stroke_width: 2.0,
             ..Default::default()
         }
     }
@@ -120,8 +130,7 @@ mod tests {
     fn move_shape(shapes: &mut [Shape], history: &mut History, idx: usize, dx: f64) {
         let before = shapes[idx].clone();
         shapes[idx].translate(dx, 0.0);
-        let after = shapes[idx].clone();
-        history.push(UndoEntry::Modify { idx, before, after });
+        history.push(UndoEntry::Modify { idx, shape: before });
     }
 
     fn xs(shapes: &[Shape]) -> Vec<f64> {

@@ -171,14 +171,7 @@ impl EditorCanvas {
 
         let key = gtk4::EventControllerKey::new();
         let canvas = self.clone();
-        key.connect_key_pressed(move |_, keyval, _, state| {
-            if state.intersects(
-                gtk4::gdk::ModifierType::CONTROL_MASK | gtk4::gdk::ModifierType::ALT_MASK,
-            ) {
-                return glib::Propagation::Proceed;
-            }
-            canvas.on_key_pressed(keyval)
-        });
+        key.connect_key_pressed(move |_, keyval, _, state| canvas.on_key_pressed(keyval, state));
 
         self.add_controller(key);
 
@@ -262,10 +255,22 @@ impl EditorCanvas {
         self.add_controller(right_pan_drag);
     }
 
-    fn on_key_pressed(&self, keyval: gtk4::gdk::Key) -> glib::Propagation {
+    fn on_key_pressed(
+        &self,
+        keyval: gtk4::gdk::Key,
+        state: gtk4::gdk::ModifierType,
+    ) -> glib::Propagation {
         let imp = self.imp();
 
         if !imp.text_input_active.get() {
+            return glib::Propagation::Proceed;
+        }
+
+        // Shortcuts stay with the window even mid-annotation, otherwise Ctrl+S
+        // would type an "s" into the text instead of saving.
+        if state.intersects(
+            gtk4::gdk::ModifierType::CONTROL_MASK | gtk4::gdk::ModifierType::ALT_MASK,
+        ) {
             return glib::Propagation::Proceed;
         }
 
@@ -315,13 +320,12 @@ impl EditorCanvas {
                     imp.drag_start_x.set(x);
                     imp.drag_start_y.set(y);
 
-                    if let Some(idx) = imp.selected_index.get() {
-                        let shapes = imp.shapes.borrow();
-                        if let Some(shape) = shapes.get(idx) {
-                            if handle == HandleType::Rotation {
+                    if handle == HandleType::Rotation {
+                        if let Some(idx) = imp.selected_index.get() {
+                            let shapes = imp.shapes.borrow();
+                            if let Some(shape) = shapes.get(idx) {
                                 imp.initial_rotation.set(shape.rotation);
                             }
-                            *imp.pending_modify.borrow_mut() = Some((idx, shape.clone()));
                         }
                     }
                 } else if let Some(idx) = self.hit_test(x, y) {
@@ -330,11 +334,6 @@ impl EditorCanvas {
                     imp.dragging.set(true);
                     imp.drag_start_x.set(x);
                     imp.drag_start_y.set(y);
-
-                    let shapes = imp.shapes.borrow();
-                    if let Some(shape) = shapes.get(idx) {
-                        *imp.pending_modify.borrow_mut() = Some((idx, shape.clone()));
-                    }
                 } else {
                     imp.selected_index.set(None);
                     imp.active_handle.set(HandleType::None);
@@ -404,17 +403,12 @@ impl EditorCanvas {
 
         if tool_type == ToolType::Select {
             if let Some(idx) = imp.selected_index.get() {
-                let shapes = imp.shapes.borrow();
-                if let Some(shape) = shapes.get(idx) {
+                if idx < imp.shapes.borrow().len() {
                     imp.dragging.set(true);
                     imp.drag_start_x.set(x);
                     imp.drag_start_y.set(y);
                     imp.drag_offset_x.set(0.0);
                     imp.drag_offset_y.set(0.0);
-
-                    if imp.pending_modify.borrow().is_none() {
-                        *imp.pending_modify.borrow_mut() = Some((idx, shape.clone()));
-                    }
                 }
             }
         }
@@ -433,6 +427,12 @@ impl EditorCanvas {
         let Some(idx) = imp.selected_index.get() else {
             return;
         };
+
+        if imp.pending_modify.borrow().is_none() {
+            if let Some(shape) = imp.shapes.borrow().get(idx) {
+                *imp.pending_modify.borrow_mut() = Some((idx, shape.clone()));
+            }
+        }
 
         let active_handle = imp.active_handle.get();
         let start_x = imp.drag_start_x.get();
@@ -491,12 +491,11 @@ impl EditorCanvas {
                 }
             }
 
-            if let Some((idx, before)) = imp.pending_modify.borrow_mut().take() {
-                let after = imp.shapes.borrow().get(idx).cloned();
-                if let Some(after) = after {
-                    if after != before {
-                        self.push_undo(UndoEntry::Modify { idx, before, after });
-                    }
+            let snapshot = imp.pending_modify.borrow_mut().take();
+            if let Some((idx, before)) = snapshot {
+                let changed = imp.shapes.borrow().get(idx) != Some(&before);
+                if changed {
+                    self.push_undo(UndoEntry::Modify { idx, shape: before });
                 }
             }
 
@@ -521,12 +520,7 @@ impl EditorCanvas {
         if let Some(mut shape) = imp.current_shape.borrow_mut().take() {
             shape.end_x = x;
             shape.end_y = y;
-            let idx = {
-                let mut shapes = imp.shapes.borrow_mut();
-                shapes.push(shape.clone());
-                shapes.len() - 1
-            };
-            self.push_undo(UndoEntry::Add { idx, shape });
+            self.commit_shape(shape);
         }
 
         self.queue_draw();
@@ -602,12 +596,7 @@ impl EditorCanvas {
             let text = imp.text_input_buffer.borrow().clone();
             if !text.is_empty() {
                 let shape = imp.tool.borrow().create_text_shape(x, y, text);
-                let idx = {
-                    let mut shapes = imp.shapes.borrow_mut();
-                    shapes.push(shape.clone());
-                    shapes.len() - 1
-                };
-                self.push_undo(UndoEntry::Add { idx, shape });
+                self.commit_shape(shape);
             }
         }
 
@@ -817,6 +806,16 @@ impl EditorCanvas {
 
     fn push_undo(&self, entry: UndoEntry) {
         self.imp().history.borrow_mut().push(entry);
+    }
+
+    /// Append a finished shape to the document and record it as undoable.
+    fn commit_shape(&self, shape: Shape) {
+        let idx = {
+            let mut shapes = self.imp().shapes.borrow_mut();
+            shapes.push(shape.clone());
+            shapes.len() - 1
+        };
+        self.push_undo(UndoEntry::Add { idx, shape });
     }
 
     pub fn clear_shapes(&self) {

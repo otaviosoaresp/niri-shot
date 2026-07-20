@@ -13,6 +13,11 @@ use crate::editor::{Color, EditorCanvas, ToolType};
 
 const APP_ID: &str = "com.github.niri-shot";
 
+enum Export {
+    Save,
+    Copy,
+}
+
 pub struct NiriShotApp {
     app: Application,
 }
@@ -102,7 +107,7 @@ impl NiriShotApp {
 
         let main_box = Box::new(Orientation::Vertical, 0);
 
-        let capture_bar = Self::create_capture_bar();
+        let (capture_bar, status) = Self::create_capture_bar();
         capture_bar.add_css_class("capture-bar");
 
         let canvas = EditorCanvas::new();
@@ -129,8 +134,6 @@ impl NiriShotApp {
         main_box.append(&Separator::new(Orientation::Horizontal));
         main_box.append(&overlay);
 
-        let status = Self::status_label(&capture_bar).expect("capture bar has a status label");
-
         Self::connect_capture_buttons(&capture_bar, &canvas, &window, &floating_toolbar, &status);
         Self::connect_tool_buttons(&floating_toolbar, &canvas);
         Self::connect_action_buttons(&floating_toolbar, &canvas, &status);
@@ -148,7 +151,7 @@ impl NiriShotApp {
         }
     }
 
-    fn create_capture_bar() -> Box {
+    fn create_capture_bar() -> (Box, Label) {
         let bar = Box::new(Orientation::Horizontal, 8);
         bar.set_margin_top(8);
         bar.set_margin_bottom(8);
@@ -168,7 +171,6 @@ impl NiriShotApp {
         btn_window.set_tooltip_text(Some("Window"));
 
         let status = Label::new(None);
-        status.set_widget_name("status_label");
         status.set_hexpand(true);
         status.set_halign(gtk4::Align::End);
         status.set_ellipsize(gtk4::pango::EllipsizeMode::End);
@@ -178,14 +180,7 @@ impl NiriShotApp {
         bar.append(&btn_window);
         bar.append(&status);
 
-        bar
-    }
-
-    fn status_label(capture_bar: &Box) -> Option<Label> {
-        Self::get_children(capture_bar)
-            .into_iter()
-            .filter_map(|w| w.downcast::<Label>().ok())
-            .find(|l| l.widget_name() == "status_label")
+        (bar, status)
     }
 
     fn show_status(label: &Label, message: &str, is_error: bool) {
@@ -435,23 +430,23 @@ impl NiriShotApp {
             let canvas = canvas.clone();
             let status = status.clone();
 
-            btn.connect_clicked(move |button| {
-                let action = button.widget_name();
-                let action = action.as_str();
-                if action != "btn_save" && action != "btn_copy" {
-                    return;
-                }
-
-                let Some(data) = canvas.get_image_data() else {
-                    Self::show_status(&status, "Nothing to export", true);
-                    return;
-                };
-
-                match action {
-                    "btn_save" => Self::report_save(&status, Self::save_screenshot(&data)),
-                    _ => Self::report_copy(&status, Self::copy_to_clipboard(&data)),
-                }
+            btn.connect_clicked(move |button| match button.widget_name().as_str() {
+                "btn_save" => Self::export(&canvas, &status, Export::Save),
+                "btn_copy" => Self::export(&canvas, &status, Export::Copy),
+                _ => {}
             });
+        }
+    }
+
+    fn export(canvas: &EditorCanvas, status: &Label, what: Export) {
+        let Some(data) = canvas.get_image_data() else {
+            Self::show_status(status, "Nothing to export", true);
+            return;
+        };
+
+        match what {
+            Export::Save => Self::report_save(status, Self::save_screenshot(&data)),
+            Export::Copy => Self::report_copy(status, Self::copy_to_clipboard(&data)),
         }
     }
 
@@ -501,17 +496,11 @@ impl NiriShotApp {
                         return glib::Propagation::Stop;
                     }
                     gtk4::gdk::Key::s => {
-                        match canvas.get_image_data() {
-                            Some(data) => Self::report_save(&status, Self::save_screenshot(&data)),
-                            None => Self::show_status(&status, "Nothing to export", true),
-                        }
+                        Self::export(&canvas, &status, Export::Save);
                         return glib::Propagation::Stop;
                     }
                     gtk4::gdk::Key::c => {
-                        match canvas.get_image_data() {
-                            Some(data) => Self::report_copy(&status, Self::copy_to_clipboard(&data)),
-                            None => Self::show_status(&status, "Nothing to export", true),
-                        }
+                        Self::export(&canvas, &status, Export::Copy);
                         return glib::Propagation::Stop;
                     }
                     gtk4::gdk::Key::plus | gtk4::gdk::Key::equal => {
