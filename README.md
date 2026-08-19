@@ -47,6 +47,48 @@ cargo install --path .
 cargo install niri-shot
 ```
 
+### Nix Flake
+
+As a flake input (e.g. in NixOS / Home Manager):
+
+```nix
+{
+  inputs = {
+    niri-shot.url = "github:otaviosoaresp/niri-shot";
+  };
+
+  outputs = { self, nixpkgs, niri-shot, ... }: {
+    # NixOS module
+    environment.systemPackages = [ niri-shot.packages.x86_64-linux.default ];
+
+    # Home Manager
+    home.packages = [ niri-shot.packages.x86_64-linux.default ];
+  };
+}
+```
+
+Or run directly without installing:
+
+```bash
+nix run github:otaviosoaresp/niri-shot
+```
+
+### Nix Development Shell
+
+```bash
+git clone https://github.com/otaviosoaresp/niri-shot.git
+cd niri-shot
+nix develop
+cargo build --release
+```
+
+Or with direnv:
+
+```bash
+direnv allow
+cargo build --release
+```
+
 ## Usage
 
 ```bash
