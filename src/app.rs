@@ -8,7 +8,7 @@ use gtk4::{
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::capture::{CaptureBackend, CaptureMode};
+use crate::capture::{self, CaptureMode};
 use crate::editor::{Color, EditorCanvas, ToolType};
 use crate::export;
 
@@ -319,7 +319,7 @@ impl NiriShotApp {
                 while glib::MainContext::default().iteration(false) {}
                 std::thread::sleep(std::time::Duration::from_millis(150));
 
-                let result = CaptureBackend::capture(mode);
+                let result = capture::capture(mode);
 
                 window.set_visible(true);
 
