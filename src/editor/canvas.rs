@@ -268,9 +268,9 @@ impl EditorCanvas {
 
         // Shortcuts stay with the window even mid-annotation, otherwise Ctrl+S
         // would type an "s" into the text instead of saving.
-        if state.intersects(
-            gtk4::gdk::ModifierType::CONTROL_MASK | gtk4::gdk::ModifierType::ALT_MASK,
-        ) {
+        if state
+            .intersects(gtk4::gdk::ModifierType::CONTROL_MASK | gtk4::gdk::ModifierType::ALT_MASK)
+        {
             return glib::Propagation::Proceed;
         }
 
@@ -832,9 +832,7 @@ impl EditorCanvas {
 
     pub fn undo(&self) {
         let imp = self.imp();
-        imp.history
-            .borrow_mut()
-            .undo(&mut imp.shapes.borrow_mut());
+        imp.history.borrow_mut().undo(&mut imp.shapes.borrow_mut());
         *imp.pending_modify.borrow_mut() = None;
         imp.selected_index.set(None);
         self.queue_draw();
@@ -842,9 +840,7 @@ impl EditorCanvas {
 
     pub fn redo(&self) {
         let imp = self.imp();
-        imp.history
-            .borrow_mut()
-            .redo(&mut imp.shapes.borrow_mut());
+        imp.history.borrow_mut().redo(&mut imp.shapes.borrow_mut());
         *imp.pending_modify.borrow_mut() = None;
         imp.selected_index.set(None);
         self.queue_draw();

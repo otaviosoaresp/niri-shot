@@ -41,10 +41,7 @@ impl CaptureBackend {
         slurp_cmd.stdout(Stdio::piped());
 
         if last_region.is_some() {
-            slurp_cmd
-                .stdin(Stdio::piped())
-                .arg("-B")
-                .arg("#3daee966");
+            slurp_cmd.stdin(Stdio::piped()).arg("-B").arg("#3daee966");
         }
 
         let mut child = slurp_cmd.spawn()?;
