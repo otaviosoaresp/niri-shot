@@ -125,6 +125,7 @@ impl EditorCanvas {
         let stream = MemoryInputStream::from_bytes(&bytes);
         let pixbuf = Pixbuf::from_stream(&stream, Cancellable::NONE)?;
 
+        self.imp().zoom.set(1.0);
         self.set_content_width(pixbuf.width());
         self.set_content_height(pixbuf.height());
         *self.imp().image.borrow_mut() = Some(pixbuf);
@@ -205,6 +206,7 @@ impl EditorCanvas {
 
             if let Some(shape) = removed {
                 self.push_undo(UndoEntry::Remove { idx, shape });
+                *imp.pending_modify.borrow_mut() = None;
                 imp.selected_index.set(None);
             }
         }

@@ -148,6 +148,12 @@ impl EditorCanvas {
         let imp = self.imp();
 
         if !imp.text_input_active.get() {
+            if matches!(keyval, gtk4::gdk::Key::Delete | gtk4::gdk::Key::BackSpace)
+                && imp.selected_index.get().is_some()
+            {
+                self.delete_selected();
+                return glib::Propagation::Stop;
+            }
             return glib::Propagation::Proceed;
         }
 
@@ -415,7 +421,7 @@ impl EditorCanvas {
         let shapes = self.imp().shapes.borrow();
 
         for (idx, shape) in shapes.iter().enumerate().rev() {
-            if shape.contains_point(x, y) {
+            if shape.hit(x, y) {
                 return Some(idx);
             }
         }
@@ -437,17 +443,7 @@ impl EditorCanvas {
         };
 
         let (min_x, min_y, max_x, max_y) = shape.bounds();
-        let (cx, cy) = shape.center();
-
-        let (test_x, test_y) = if shape.rotation.abs() > 0.001 {
-            let dx = x - cx;
-            let dy = y - cy;
-            let cos_r = (-shape.rotation).cos();
-            let sin_r = (-shape.rotation).sin();
-            (cx + dx * cos_r - dy * sin_r, cy + dx * sin_r + dy * cos_r)
-        } else {
-            (x, y)
-        };
+        let (test_x, test_y) = shape.to_local(x, y);
 
         let handle_size = 8.0;
 
