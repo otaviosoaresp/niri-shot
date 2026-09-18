@@ -61,8 +61,4 @@ impl EditorCanvas {
             }
         }
     }
-
-    pub fn get_zoom(&self) -> f64 {
-        self.imp().zoom.get()
-    }
 }
