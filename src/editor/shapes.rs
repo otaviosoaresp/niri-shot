@@ -327,7 +327,7 @@ impl Shape {
         self.contains_point(local_x, local_y)
     }
 
-    pub fn contains_point(&self, x: f64, y: f64) -> bool {
+    fn contains_point(&self, x: f64, y: f64) -> bool {
         let tolerance = self.stroke_width.max(5.0);
 
         match self.shape_type {
@@ -601,6 +601,9 @@ mod tests {
     #[test]
     fn text_width_counts_characters_not_bytes() {
         assert_eq!(text("ação").bounds(), text("acao").bounds());
+
+        let (min_x, _, max_x, _) = text("ação").bounds();
+        assert_eq!(max_x - min_x, 4.0 * 20.0 * 0.6);
     }
 
     #[test]
