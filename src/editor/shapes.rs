@@ -309,6 +309,24 @@ impl Shape {
         ((min_x + max_x) / 2.0, (min_y + max_y) / 2.0)
     }
 
+    pub fn to_local(&self, x: f64, y: f64) -> (f64, f64) {
+        if self.rotation.abs() <= 0.001 {
+            return (x, y);
+        }
+
+        let (cx, cy) = self.center();
+        let dx = x - cx;
+        let dy = y - cy;
+        let cos_r = (-self.rotation).cos();
+        let sin_r = (-self.rotation).sin();
+        (cx + dx * cos_r - dy * sin_r, cy + dx * sin_r + dy * cos_r)
+    }
+
+    pub fn hit(&self, x: f64, y: f64) -> bool {
+        let (local_x, local_y) = self.to_local(x, y);
+        self.contains_point(local_x, local_y)
+    }
+
     pub fn contains_point(&self, x: f64, y: f64) -> bool {
         let tolerance = self.stroke_width.max(5.0);
 
@@ -583,5 +601,21 @@ mod tests {
     #[test]
     fn text_width_counts_characters_not_bytes() {
         assert_eq!(text("ação").bounds(), text("acao").bounds());
+    }
+
+    #[test]
+    fn hit_testing_follows_rotation() {
+        let bar = Shape {
+            shape_type: ShapeType::Rectangle,
+            start_x: 0.0,
+            start_y: 40.0,
+            end_x: 100.0,
+            end_y: 60.0,
+            rotation: PI / 2.0,
+            ..Default::default()
+        };
+
+        assert!(bar.hit(50.0, 5.0), "inside the rotated bar");
+        assert!(!bar.hit(5.0, 50.0), "inside the unrotated bar only");
     }
 }
