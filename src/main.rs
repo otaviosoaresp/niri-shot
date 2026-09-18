@@ -3,29 +3,29 @@ mod capture;
 mod editor;
 mod export;
 
-use anyhow::Result;
-use capture::CaptureMode;
+use app::{InitialState, NiriShotApp};
+use capture::{CaptureError, CaptureMode};
 use clap::Parser;
 
 #[derive(Parser)]
 #[command(name = "niri-shot")]
-#[command(about = "Screenshot tool for Niri Wayland compositor")]
+#[command(about = "Screenshot tool for the niri Wayland compositor")]
 #[command(version)]
 struct Args {
-    #[arg(short, long, help = "Capture fullscreen")]
+    #[arg(short, long, help = "Capture the focused monitor")]
     fullscreen: bool,
 
-    #[arg(short, long, help = "Capture region")]
+    #[arg(short, long, help = "Capture a region (interactive selection)")]
     region: bool,
 
-    #[arg(short, long, help = "Capture window")]
+    #[arg(short, long, help = "Pick a window to capture")]
     window: bool,
 }
 
-fn main() -> Result<()> {
+fn main() {
     let args = Args::parse();
 
-    let initial_mode = if args.fullscreen {
+    let mode = if args.fullscreen {
         Some(CaptureMode::Fullscreen)
     } else if args.region {
         Some(CaptureMode::Region)
@@ -35,24 +35,31 @@ fn main() -> Result<()> {
         None
     };
 
-    let initial_data = if let Some(mode) = initial_mode {
-        match capture::capture(mode) {
-            Ok(data) => {
-                if export::copy_png(&data).is_err() {
-                    eprintln!("Failed to copy to clipboard");
+    let initial = match mode {
+        None => InitialState::default(),
+        Some(mode) => match capture::capture(mode) {
+            Ok(image) => {
+                let error = match mode {
+                    CaptureMode::Region => export::copy_png(&image)
+                        .err()
+                        .map(|e| format!("Copy failed: {}", e)),
+                    CaptureMode::Fullscreen | CaptureMode::Window => None,
+                };
+                InitialState {
+                    image: Some(image),
+                    error,
                 }
-                Some(data)
             }
+            Err(CaptureError::Cancelled) => return,
             Err(e) => {
                 eprintln!("Capture error: {}", e);
-                return Ok(());
+                InitialState {
+                    image: None,
+                    error: Some(format!("Capture failed: {}", e)),
+                }
             }
-        }
-    } else {
-        None
+        },
     };
 
-    let app = app::NiriShotApp::new(initial_data);
-    app.run();
-    Ok(())
+    NiriShotApp::new(initial).run();
 }

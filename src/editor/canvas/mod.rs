@@ -120,20 +120,20 @@ impl EditorCanvas {
         canvas
     }
 
-    pub fn set_image(&self, data: &[u8]) {
+    pub fn set_image(&self, data: &[u8]) -> Result<(), glib::Error> {
         let bytes = glib::Bytes::from(data);
         let stream = MemoryInputStream::from_bytes(&bytes);
+        let pixbuf = Pixbuf::from_stream(&stream, Cancellable::NONE)?;
 
-        if let Ok(pixbuf) = Pixbuf::from_stream(&stream, Cancellable::NONE) {
-            self.set_content_width(pixbuf.width());
-            self.set_content_height(pixbuf.height());
-            *self.imp().image.borrow_mut() = Some(pixbuf);
-            self.imp().shapes.borrow_mut().clear();
-            self.imp().history.borrow_mut().clear();
-            *self.imp().pending_modify.borrow_mut() = None;
-            self.imp().selected_index.set(None);
-            self.queue_draw();
-        }
+        self.set_content_width(pixbuf.width());
+        self.set_content_height(pixbuf.height());
+        *self.imp().image.borrow_mut() = Some(pixbuf);
+        self.imp().shapes.borrow_mut().clear();
+        self.imp().history.borrow_mut().clear();
+        *self.imp().pending_modify.borrow_mut() = None;
+        self.imp().selected_index.set(None);
+        self.queue_draw();
+        Ok(())
     }
 
     pub fn set_tool_type(&self, tool_type: ToolType) {
