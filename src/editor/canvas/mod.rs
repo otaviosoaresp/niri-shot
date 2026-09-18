@@ -206,6 +206,7 @@ impl EditorCanvas {
 
             if let Some(shape) = removed {
                 self.push_undo(UndoEntry::Remove { idx, shape });
+                *imp.pending_modify.borrow_mut() = None;
                 imp.selected_index.set(None);
             }
         }
