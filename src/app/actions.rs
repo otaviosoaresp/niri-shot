@@ -1,11 +1,12 @@
-use gtk4::glib;
 use gtk4::prelude::*;
+use gtk4::{gio, glib};
 use gtk4::{
     ApplicationWindow, Box, Button, ColorButton, EventControllerKey, Label, Scale, ToggleButton,
 };
+use std::time::Duration;
 
 use super::widgets::{enable_action_buttons, get_children, resize_window_to_image, show_status};
-use crate::capture::{self, CaptureMode};
+use crate::capture::{self, CaptureError, CaptureMode};
 use crate::editor::{Color, EditorCanvas, ToolType};
 use crate::export;
 
@@ -14,6 +15,8 @@ enum Export {
     Copy,
 }
 
+const SETTLE_DELAY: Duration = Duration::from_millis(300);
+
 pub fn connect_capture_buttons(
     capture_bar: &Box,
     canvas: &EditorCanvas,
@@ -21,12 +24,8 @@ pub fn connect_capture_buttons(
     toolbar: &Box,
     status: &Label,
 ) {
-    let buttons: Vec<_> = get_children(capture_bar)
-        .into_iter()
-        .filter_map(|w| w.downcast::<Button>().ok())
-        .collect();
-
-    for btn in buttons {
+    for btn in capture_buttons(capture_bar) {
+        let capture_bar = capture_bar.clone();
         let canvas = canvas.clone();
         let window = window.clone();
         let toolbar = toolbar.clone();
@@ -40,28 +39,68 @@ pub fn connect_capture_buttons(
                 _ => return,
             };
 
+            set_capture_buttons_sensitive(&capture_bar, false);
             window.set_visible(false);
 
-            while glib::MainContext::default().iteration(false) {}
-            std::thread::sleep(std::time::Duration::from_millis(150));
+            let capture_bar = capture_bar.clone();
+            let canvas = canvas.clone();
+            let window = window.clone();
+            let toolbar = toolbar.clone();
+            let status = status.clone();
 
-            let result = capture::capture(mode);
+            glib::spawn_future_local(async move {
+                let result = gio::spawn_blocking(move || {
+                    std::thread::sleep(SETTLE_DELAY);
+                    capture::capture(mode)
+                })
+                .await
+                .unwrap_or_else(|_| {
+                    Err(CaptureError::Failed("capture thread panicked".to_string()))
+                });
 
-            window.set_visible(true);
+                window.set_visible(true);
+                set_capture_buttons_sensitive(&capture_bar, true);
 
-            match result {
-                Ok(data) => {
-                    canvas.set_image(&data);
-                    enable_action_buttons(&toolbar, true);
-                    resize_window_to_image(&window, &canvas);
-                    show_status(&status, "", false);
+                match result {
+                    Ok(data) => load_capture(&canvas, &window, &toolbar, &status, &data),
+                    Err(CaptureError::Cancelled) => show_status(&status, "", false),
+                    Err(e) => {
+                        eprintln!("Capture error: {}", e);
+                        show_status(&status, &format!("Capture failed: {}", e), true);
+                    }
                 }
-                Err(e) => {
-                    eprintln!("Capture error: {}", e);
-                    show_status(&status, &format!("Capture failed: {}", e), true);
-                }
-            }
+            });
         });
+    }
+}
+
+fn capture_buttons(capture_bar: &Box) -> Vec<Button> {
+    get_children(capture_bar)
+        .into_iter()
+        .filter_map(|w| w.downcast::<Button>().ok())
+        .collect()
+}
+
+fn set_capture_buttons_sensitive(capture_bar: &Box, sensitive: bool) {
+    for btn in capture_buttons(capture_bar) {
+        btn.set_sensitive(sensitive);
+    }
+}
+
+pub fn load_capture(
+    canvas: &EditorCanvas,
+    window: &ApplicationWindow,
+    toolbar: &Box,
+    status: &Label,
+    data: &[u8],
+) {
+    match canvas.set_image(data) {
+        Ok(()) => {
+            enable_action_buttons(toolbar, true);
+            resize_window_to_image(window, canvas);
+            show_status(status, "", false);
+        }
+        Err(e) => show_status(status, &format!("Could not load capture: {}", e), true),
     }
 }
 
