@@ -2,7 +2,7 @@
 name = "niri-shot"
 version = "0.1.0"
 edition = "2021"
-description = "Screenshot tool for Niri Wayland compositor with annotation support"
+description = "Screenshot tool for the niri Wayland compositor with annotation support"
 authors = ["Otavio Soares"]
 license = "MIT"
 repository = "https://github.com/otaviosoaresp/niri-shot"
