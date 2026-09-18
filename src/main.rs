@@ -2,12 +2,11 @@ mod app;
 mod capture;
 mod config;
 mod editor;
+mod export;
 
 use anyhow::Result;
 use capture::{CaptureBackend, CaptureMode};
 use clap::Parser;
-use std::io::Write;
-use std::process::{Command, Stdio};
 
 #[derive(Parser)]
 #[command(name = "niri-shot")]
@@ -40,7 +39,9 @@ fn main() -> Result<()> {
     let initial_data = if let Some(mode) = initial_mode {
         match CaptureBackend::capture(mode) {
             Ok(data) => {
-                copy_to_clipboard(&data);
+                if export::copy_png(&data).is_err() {
+                    eprintln!("Failed to copy to clipboard");
+                }
                 Some(data)
             }
             Err(e) => {
@@ -55,22 +56,4 @@ fn main() -> Result<()> {
     let app = app::NiriShotApp::new(initial_data);
     app.run();
     Ok(())
-}
-
-fn copy_to_clipboard(data: &[u8]) {
-    let result = Command::new("wl-copy")
-        .arg("--type")
-        .arg("image/png")
-        .stdin(Stdio::piped())
-        .spawn()
-        .and_then(|mut child| {
-            if let Some(mut stdin) = child.stdin.take() {
-                stdin.write_all(data)?;
-            }
-            child.wait()
-        });
-
-    if result.is_err() {
-        eprintln!("Failed to copy to clipboard");
-    }
 }

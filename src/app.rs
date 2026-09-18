@@ -10,6 +10,7 @@ use std::rc::Rc;
 
 use crate::capture::{CaptureBackend, CaptureMode};
 use crate::editor::{Color, EditorCanvas, ToolType};
+use crate::export;
 
 const APP_ID: &str = "com.github.niri-shot";
 
@@ -435,22 +436,22 @@ impl NiriShotApp {
             let status = status.clone();
 
             btn.connect_clicked(move |button| match button.widget_name().as_str() {
-                "btn_save" => Self::export(&canvas, &status, Export::Save),
-                "btn_copy" => Self::export(&canvas, &status, Export::Copy),
+                "btn_save" => Self::export_image(&canvas, &status, Export::Save),
+                "btn_copy" => Self::export_image(&canvas, &status, Export::Copy),
                 _ => {}
             });
         }
     }
 
-    fn export(canvas: &EditorCanvas, status: &Label, what: Export) {
+    fn export_image(canvas: &EditorCanvas, status: &Label, what: Export) {
         let Some(data) = canvas.get_image_data() else {
             Self::show_status(status, "Nothing to export", true);
             return;
         };
 
         match what {
-            Export::Save => Self::report_save(status, Self::save_screenshot(&data)),
-            Export::Copy => Self::report_copy(status, Self::copy_to_clipboard(&data)),
+            Export::Save => Self::report_save(status, export::save_png(&data)),
+            Export::Copy => Self::report_copy(status, export::copy_png(&data)),
         }
     }
 
@@ -500,11 +501,11 @@ impl NiriShotApp {
                         return glib::Propagation::Stop;
                     }
                     gtk4::gdk::Key::s => {
-                        Self::export(&canvas, &status, Export::Save);
+                        Self::export_image(&canvas, &status, Export::Save);
                         return glib::Propagation::Stop;
                     }
                     gtk4::gdk::Key::c => {
-                        Self::export(&canvas, &status, Export::Copy);
+                        Self::export_image(&canvas, &status, Export::Copy);
                         return glib::Propagation::Stop;
                     }
                     gtk4::gdk::Key::plus | gtk4::gdk::Key::equal => {
@@ -550,49 +551,5 @@ impl NiriShotApp {
         }
 
         children
-    }
-
-    fn save_screenshot(data: &[u8]) -> anyhow::Result<std::path::PathBuf> {
-        use chrono::Local;
-        use std::fs;
-        use std::path::PathBuf;
-
-        let pictures_dir = directories::UserDirs::new()
-            .and_then(|dirs| dirs.picture_dir().map(|p| p.to_path_buf()))
-            .unwrap_or_else(|| {
-                PathBuf::from(std::env::var("HOME").unwrap_or_default()).join("Pictures")
-            });
-
-        let screenshots_dir = pictures_dir.join("Screenshots");
-        fs::create_dir_all(&screenshots_dir)?;
-
-        let timestamp = Local::now().format("%Y-%m-%d-%H%M%S");
-        let filename = format!("screenshot-{}.png", timestamp);
-        let filepath = screenshots_dir.join(&filename);
-
-        fs::write(&filepath, data)?;
-        println!("Saved to: {}", filepath.display());
-
-        Ok(filepath)
-    }
-
-    fn copy_to_clipboard(data: &[u8]) -> anyhow::Result<()> {
-        use std::io::Write;
-        use std::process::{Command, Stdio};
-
-        let mut child = Command::new("wl-copy")
-            .arg("--type")
-            .arg("image/png")
-            .stdin(Stdio::piped())
-            .spawn()?;
-
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(data)?;
-        }
-
-        child.wait()?;
-        println!("Copied to clipboard");
-
-        Ok(())
     }
 }
