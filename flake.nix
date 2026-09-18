@@ -18,7 +18,12 @@
             version = (pkgs.lib.importTOML ./Cargo.toml).package.version;
             src = ./.;
 
-            nativeBuildInputs = with pkgs; [ pkg-config ];
+            cargoLock.lockFile = ./Cargo.lock;
+
+            nativeBuildInputs = with pkgs; [
+              pkg-config
+              wrapGAppsHook4
+            ];
 
             buildInputs = with pkgs; [
               gtk4
@@ -26,11 +31,11 @@
               pango
               gdk-pixbuf
               graphene
-              libadwaita
-              openssl
             ];
 
-            cargoLock.lockFile = ./Cargo.lock;
+            preFixup = ''
+              gappsWrapperArgs+=(--prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.grim pkgs.slurp pkgs.wl-clipboard ]})
+            '';
           };
         };
 
