@@ -1,37 +1,52 @@
 # niri-shot
 
-A screenshot tool for the [Niri](https://github.com/YaLTeR/niri) Wayland compositor with built-in annotation support.
+[![CI](https://github.com/otaviosoaresp/niri-shot/actions/workflows/ci.yml/badge.svg)](https://github.com/otaviosoaresp/niri-shot/actions/workflows/ci.yml)
+
+A screenshot tool for the [niri](https://github.com/niri-wm/niri) Wayland compositor with a built-in annotation editor.
 
 ## Features
 
-- **Multiple capture modes**: Fullscreen, region selection, or window capture
-- **Annotation tools**: Rectangle, circle, line, arrow, freehand drawing, text, blur, and highlight
-- **Auto-copy**: Screenshots are automatically copied to clipboard
-- **Zoom & Pan**: Navigate large screenshots with zoom (Ctrl+Scroll) and pan (Middle mouse / Shift+Right click)
-- **Undo/Redo**: Full history support for annotations
-- **GTK4 interface**: Modern, native Wayland experience
+- **niri-native capture**: pick a window with the mouse, or capture the focused monitor, through niri IPC. niri renders only the picked window, so windows covering it do not appear.
+- **Region capture**: interactive selection with `slurp`; the last region is highlighted on the next run
+- **Annotation tools**: rectangle, circle, line, arrow, freehand drawing, text, blur, and highlight
+- **Clipboard**: command-line captures are copied right away; Ctrl+C copies the annotated image
+- **Zoom and pan**: Ctrl+Scroll to zoom; middle mouse drag or Shift+Right drag to pan
+- **Undo/redo**: drawing, moving, resizing, rotating and deleting annotations are all undoable
+- **GTK4 interface**
 
-## Dependencies
+## Requirements
 
-- [grim](https://sr.ht/~emersion/grim/) - Screenshot utility for Wayland
-- [slurp](https://github.com/emersion/slurp) - Region selection tool
-- [wl-clipboard](https://github.com/bugaevc/wl-clipboard) - Clipboard utilities for Wayland
-- GTK4
+- niri 25.11 or newer (window and monitor capture use `niri msg`)
+- GTK 4
+- [wl-clipboard](https://github.com/bugaevc/wl-clipboard)
+- [grim](https://sr.ht/~emersion/grim/) and [slurp](https://github.com/emersion/slurp), for region capture only
 - A Nerd Font (optional, for toolbar icons)
 
 ### Arch Linux
 
 ```bash
-sudo pacman -S grim slurp wl-clipboard gtk4
+sudo pacman -S gtk4 wl-clipboard grim slurp
 ```
 
 ### Fedora
 
 ```bash
-sudo dnf install grim slurp wl-clipboard gtk4
+sudo dnf install gtk4 wl-clipboard grim slurp
 ```
 
 ## Installation
+
+### Prebuilt binary
+
+Each [release](https://github.com/otaviosoaresp/niri-shot/releases) ships `niri-shot-x86_64-linux.tar.gz` with a `.sha256` checksum. The binary is built on Ubuntu 24.04 and needs glibc 2.39 or newer; GTK 4 releases older than 4.14 are untested.
+
+```bash
+curl -LO https://github.com/otaviosoaresp/niri-shot/releases/latest/download/niri-shot-x86_64-linux.tar.gz
+curl -LO https://github.com/otaviosoaresp/niri-shot/releases/latest/download/niri-shot-x86_64-linux.tar.gz.sha256
+sha256sum -c niri-shot-x86_64-linux.tar.gz.sha256
+tar -xzf niri-shot-x86_64-linux.tar.gz
+install -Dm755 niri-shot ~/.local/bin/niri-shot
+```
 
 ### From source
 
@@ -41,13 +56,9 @@ cd niri-shot
 cargo install --path .
 ```
 
-### Cargo
+### Nix flake
 
-```bash
-cargo install niri-shot
-```
-
-### Nix Flake
+The Nix package puts `grim`, `slurp` and `wl-copy` on its own `PATH`.
 
 As a flake input (e.g. in NixOS / Home Manager):
 
@@ -73,7 +84,7 @@ Or run directly without installing:
 nix run github:otaviosoaresp/niri-shot
 ```
 
-### Nix Development Shell
+### Nix development shell
 
 ```bash
 git clone https://github.com/otaviosoaresp/niri-shot.git
@@ -95,7 +106,7 @@ cargo build --release
 # Open the editor without capturing
 niri-shot
 
-# Capture fullscreen
+# Capture the focused monitor
 niri-shot --fullscreen
 niri-shot -f
 
@@ -103,10 +114,14 @@ niri-shot -f
 niri-shot --region
 niri-shot -r
 
-# Capture a window/output
+# Pick a window with the mouse (Esc cancels)
 niri-shot --window
 niri-shot -w
 ```
+
+Cancelling a selection exits without opening the editor. If a capture fails, the editor opens and shows the error in its status bar.
+
+Window and monitor captures are taken by niri itself, so niri also copies the image to the clipboard and may show its own screenshot notification.
 
 ## Keyboard Shortcuts
 
@@ -120,14 +135,17 @@ niri-shot -w
 | `Ctrl+-` | Zoom out |
 | `Ctrl+0` | Reset zoom |
 | `Ctrl+Scroll` | Zoom in/out |
+| `Delete` / `Backspace` | Delete the selected annotation |
 | `Middle Mouse` | Pan |
 | `Shift+Right Click` | Pan |
 
-## Niri Configuration
+## niri Configuration
 
-Add the following to your niri config (`~/.config/niri/config.kdl`):
+Add the following to your niri config (`~/.config/niri/config.kdl`).
 
 ### Keybindings
+
+niri's default config binds these keys to its own screenshot actions; replace those lines.
 
 ```kdl
 binds {
@@ -152,20 +170,20 @@ window-rule {
 
 | Tool | Description |
 |------|-------------|
-| Select | Select and move/resize annotations |
+| Select | Select and move/resize/rotate annotations |
 | Rectangle | Draw rectangles |
 | Circle | Draw circles/ellipses |
 | Line | Draw straight lines |
 | Arrow | Draw arrows |
 | Freehand | Free drawing |
 | Text | Add text annotations |
-| Blur | Blur sensitive areas |
+| Blur | Cover sensitive areas with an opaque pattern |
 | Highlight | Highlight important areas |
 
 ## File Locations
 
-- Screenshots: `~/Pictures/Screenshots/`
-- Config: `~/.config/niri-shot/config.json`
+- Screenshots: `~/Pictures/Screenshots/` (your XDG pictures directory)
+- Last region: `~/.cache/niri-shot/last-region`
 
 ## License
 
@@ -173,4 +191,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit issues and pull requests.
+Issues and pull requests are welcome. Pull requests are squash-merged and the PR title becomes the changelog entry, so PR titles must follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat: ...`, `fix: ...`, `docs: ...`). CI runs `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`, `nix build` and a PR title check.
