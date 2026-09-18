@@ -25,11 +25,17 @@ pub fn copy_png(data: &[u8]) -> Result<()> {
         .stdin(Stdio::piped())
         .spawn()?;
 
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(data)?;
+    let written = match child.stdin.take() {
+        Some(mut stdin) => stdin.write_all(data),
+        None => Ok(()),
+    };
+    let status = child.wait()?;
+    written?;
+
+    if !status.success() {
+        anyhow::bail!("wl-copy exited with {}", status);
     }
 
-    child.wait()?;
     Ok(())
 }
 
