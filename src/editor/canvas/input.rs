@@ -148,6 +148,12 @@ impl EditorCanvas {
         let imp = self.imp();
 
         if !imp.text_input_active.get() {
+            if matches!(keyval, gtk4::gdk::Key::Delete | gtk4::gdk::Key::BackSpace)
+                && imp.selected_index.get().is_some()
+            {
+                self.delete_selected();
+                return glib::Propagation::Stop;
+            }
             return glib::Propagation::Proceed;
         }
 
