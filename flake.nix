@@ -15,7 +15,7 @@
           default = niri-shot;
           niri-shot = pkgs.rustPlatform.buildRustPackage {
             pname = "niri-shot";
-            version = "0.1.0";
+            version = (pkgs.lib.importTOML ./Cargo.toml).package.version;
             src = ./.;
 
             nativeBuildInputs = with pkgs; [ pkg-config ];
@@ -30,7 +30,7 @@
               openssl
             ];
 
-            cargoHash = "sha256-ggYwVTP737hR0n2XP0w1lSGw/HMqTa0UxebWQ6bpbo0=";
+            cargoLock.lockFile = ./Cargo.lock;
           };
         };
 

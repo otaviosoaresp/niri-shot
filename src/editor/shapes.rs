@@ -560,7 +560,7 @@ mod tests {
         // 0.3 and 0.5 in premultiplied ARGB32 over full alpha, allowing rounding.
         let expected = [(0.3_f64 * 255.0) as u8, (0.5_f64 * 255.0) as u8];
 
-        for (i, px) in pixels.chunks_exact(4).enumerate() {
+        for (i, px) in pixels.as_chunks::<4>().0.iter().enumerate() {
             let matches = expected.iter().any(|e| px[0].abs_diff(*e) <= 1);
             assert!(
                 matches,

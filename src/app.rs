@@ -187,7 +187,11 @@ impl NiriShotApp {
         label.set_text(message);
         label.remove_css_class("status-error");
         label.remove_css_class("status-ok");
-        label.add_css_class(if is_error { "status-error" } else { "status-ok" });
+        label.add_css_class(if is_error {
+            "status-error"
+        } else {
+            "status-ok"
+        });
     }
 
     fn create_floating_toolbar() -> Box {
