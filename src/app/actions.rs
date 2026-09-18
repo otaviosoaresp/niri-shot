@@ -50,18 +50,30 @@ pub fn connect_capture_buttons(
             window.set_visible(true);
 
             match result {
-                Ok(data) => {
-                    canvas.set_image(&data);
-                    enable_action_buttons(&toolbar, true);
-                    resize_window_to_image(&window, &canvas);
-                    show_status(&status, "", false);
-                }
+                Ok(data) => load_capture(&canvas, &window, &toolbar, &status, &data),
                 Err(e) => {
                     eprintln!("Capture error: {}", e);
                     show_status(&status, &format!("Capture failed: {}", e), true);
                 }
             }
         });
+    }
+}
+
+pub fn load_capture(
+    canvas: &EditorCanvas,
+    window: &ApplicationWindow,
+    toolbar: &Box,
+    status: &Label,
+    data: &[u8],
+) {
+    match canvas.set_image(data) {
+        Ok(()) => {
+            enable_action_buttons(toolbar, true);
+            resize_window_to_image(window, canvas);
+            show_status(status, "", false);
+        }
+        Err(e) => show_status(status, &format!("Could not load capture: {}", e), true),
     }
 }
 

@@ -13,21 +13,28 @@ use crate::editor::EditorCanvas;
 
 const APP_ID: &str = "com.github.niri-shot";
 
+#[derive(Default)]
+pub struct InitialState {
+    pub image: Option<Vec<u8>>,
+    pub error: Option<String>,
+}
+
 pub struct NiriShotApp {
     app: Application,
 }
 
 impl NiriShotApp {
-    pub fn new(initial_data: Option<Vec<u8>>) -> Self {
+    pub fn new(initial: InitialState) -> Self {
         let app = Application::builder()
             .application_id(APP_ID)
             .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
             .build();
 
-        let initial_data = Rc::new(RefCell::new(initial_data));
+        let initial = Rc::new(RefCell::new(Some(initial)));
 
         app.connect_activate(move |app| {
-            Self::build_ui(app, initial_data.clone());
+            let state = initial.borrow_mut().take().unwrap_or_default();
+            Self::build_ui(app, state);
         });
 
         Self { app }
@@ -90,7 +97,7 @@ impl NiriShotApp {
         );
     }
 
-    fn build_ui(app: &Application, initial_data: Rc<RefCell<Option<Vec<u8>>>>) {
+    fn build_ui(app: &Application, initial: InitialState) {
         Self::load_css();
 
         let window = ApplicationWindow::builder()
@@ -142,13 +149,14 @@ impl NiriShotApp {
 
         window.set_child(Some(&main_box));
 
-        let data = initial_data.borrow_mut().take();
         window.present();
 
-        if let Some(image_data) = data {
-            canvas.set_image(&image_data);
-            widgets::enable_action_buttons(&floating_toolbar, true);
-            widgets::resize_window_to_image(&window, &canvas);
+        if let Some(image) = initial.image {
+            actions::load_capture(&canvas, &window, &floating_toolbar, &status, &image);
+        }
+
+        if let Some(error) = initial.error {
+            widgets::show_status(&status, &error, true);
         }
     }
 }
