@@ -278,7 +278,7 @@ impl Shape {
                 (min_x, min_y, max_x, max_y)
             }
             ShapeType::Text => {
-                let text_width = self.text.len() as f64 * self.font_size * 0.6;
+                let text_width = self.text.chars().count() as f64 * self.font_size * 0.6;
                 let text_height = self.font_size;
                 (
                     self.start_x,
@@ -309,7 +309,25 @@ impl Shape {
         ((min_x + max_x) / 2.0, (min_y + max_y) / 2.0)
     }
 
-    pub fn contains_point(&self, x: f64, y: f64) -> bool {
+    pub fn to_local(&self, x: f64, y: f64) -> (f64, f64) {
+        if self.rotation.abs() <= 0.001 {
+            return (x, y);
+        }
+
+        let (cx, cy) = self.center();
+        let dx = x - cx;
+        let dy = y - cy;
+        let cos_r = (-self.rotation).cos();
+        let sin_r = (-self.rotation).sin();
+        (cx + dx * cos_r - dy * sin_r, cy + dx * sin_r + dy * cos_r)
+    }
+
+    pub fn hit(&self, x: f64, y: f64) -> bool {
+        let (local_x, local_y) = self.to_local(x, y);
+        self.contains_point(local_x, local_y)
+    }
+
+    fn contains_point(&self, x: f64, y: f64) -> bool {
         let tolerance = self.stroke_width.max(5.0);
 
         match self.shape_type {
@@ -570,5 +588,37 @@ mod tests {
                 &px[..3]
             );
         }
+    }
+
+    fn text(content: &str) -> Shape {
+        Shape {
+            shape_type: ShapeType::Text,
+            text: content.to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn text_width_counts_characters_not_bytes() {
+        assert_eq!(text("ação").bounds(), text("acao").bounds());
+
+        let (min_x, _, max_x, _) = text("ação").bounds();
+        assert_eq!(max_x - min_x, 4.0 * 20.0 * 0.6);
+    }
+
+    #[test]
+    fn hit_testing_follows_rotation() {
+        let bar = Shape {
+            shape_type: ShapeType::Rectangle,
+            start_x: 0.0,
+            start_y: 40.0,
+            end_x: 100.0,
+            end_y: 60.0,
+            rotation: PI / 2.0,
+            ..Default::default()
+        };
+
+        assert!(bar.hit(50.0, 5.0), "inside the rotated bar");
+        assert!(!bar.hit(5.0, 50.0), "inside the unrotated bar only");
     }
 }
