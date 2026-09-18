@@ -278,7 +278,7 @@ impl Shape {
                 (min_x, min_y, max_x, max_y)
             }
             ShapeType::Text => {
-                let text_width = self.text.len() as f64 * self.font_size * 0.6;
+                let text_width = self.text.chars().count() as f64 * self.font_size * 0.6;
                 let text_height = self.font_size;
                 (
                     self.start_x,
@@ -570,5 +570,18 @@ mod tests {
                 &px[..3]
             );
         }
+    }
+
+    fn text(content: &str) -> Shape {
+        Shape {
+            shape_type: ShapeType::Text,
+            text: content.to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn text_width_counts_characters_not_bytes() {
+        assert_eq!(text("ação").bounds(), text("acao").bounds());
     }
 }
